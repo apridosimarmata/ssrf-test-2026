@@ -1,0 +1,44 @@
+name: Orchestrator Auth Test
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get OIDC token and test orchestrator
+        env:
+          ORCHESTRATOR_URL: https://hosted-compute-request-orchestrator-prod-eus-01.githubapp.com
+        run: |
+          echo "=== Getting OIDC token for orchestrator audience ==="
+          
+          # Try different audiences
+          for aud in "api://hosted-compute-ro" "api://hosted-compute-rw" "https://hosted-compute-request-orchestrator-prod-eus-01.githubapp.com"; do
+            echo "Trying audience: $aud"
+            RESULT=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${aud}" 2>/dev/null)
+            TOKEN=$(echo "$RESULT" | jq -r '.value // empty')
+            
+            if [ -n "$TOKEN" ]; then
+              echo "Got token for $aud"
+              
+              # Try to access orchestrator with this token
+              echo "Testing orchestrator /vm/v1..."
+              RESP=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $TOKEN" \
+                "$ORCHESTRATOR_URL/vm/v1" 2>/dev/null)
+              HTTP_CODE=$(echo "$RESP" | tail -1)
+              BODY=$(echo "$RESP" | head -n -1)
+              echo "Status: $HTTP_CODE"
+              echo "Body: ${BODY:0:500}"
+              
+              # Also try /health, /api, /runners
+              for ep in "/health" "/api/v1/runners" "/vm/v1/runners"; do
+                RESP=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $TOKEN" \
+                  "$ORCHESTRATOR_URL$ep" 2>/dev/null)
+                echo "$ep: $(echo "$RESP" | tail -1)"
+              done
+            else
+              echo "No token for $aud"
+            fi
+          done
