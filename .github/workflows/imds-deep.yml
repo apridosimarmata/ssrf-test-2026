@@ -1,0 +1,57 @@
+name: IMDS Deep Dive
+on:
+  workflow_dispatch:
+
+jobs:
+  imds-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deep IMDS Enumeration
+        run: |
+          echo "=== FULL IMDS ENUMERATION ==="
+          
+          echo "=== 1. Instance Identity Document ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq . 2>/dev/null || true
+          
+          echo ""
+          echo "=== 2. Identity Token (MSI) ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" 2>&1 || true
+          
+          echo ""
+          echo "=== 3. Scheduled Events ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/scheduledevents?api-version=2020-07-01" 2>&1 || true
+          
+          echo ""
+          echo "=== 4. Attested Data ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/attested/document?api-version=2020-09-01" 2>&1 | head -50 || true
+          
+          echo ""
+          echo "=== 5. Instance Tags ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/tagsList?api-version=2021-02-01" | jq . 2>/dev/null || true
+          
+          echo ""
+          echo "=== 6. Hosted Compute RO Endpoint ==="
+          curl -sv -m 10 "https://hosted-compute-request-orchestrator-prod-eus-02.githubapp.com/vm/v1" 2>&1 | head -30 || true
+          
+          echo ""
+          echo "=== 7. Network Config ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/instance/network?api-version=2021-02-01" | jq . 2>/dev/null || true
+          
+          echo ""
+          echo "=== 8. Storage Endpoints ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/storageProfile?api-version=2021-02-01" | jq . 2>/dev/null || true
+          
+          echo ""
+          echo "=== 9. Custom Data ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/customData?api-version=2021-02-01&format=text" 2>&1 || true
+          
+          echo ""
+          echo "=== 10. User Data ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-02-01&format=text" 2>&1 || true
+          
+          echo ""
+          echo "=== 11. Public Keys ==="
+          curl -s -m 5 -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/publicKeys?api-version=2021-02-01" | jq . 2>/dev/null || true
+          
+          echo ""
+          echo "=== DONE ==="
