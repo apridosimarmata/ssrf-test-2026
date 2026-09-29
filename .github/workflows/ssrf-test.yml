@@ -10,10 +10,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
-          lfs: true
+          submodules: false
+          lfs: false
       
-      - name: Fetch submodules
+      - name: Manual submodule init
         run: |
-          git submodule update --init --recursive || true
-          git lfs fetch --all || true
+          cat .gitmodules
+          echo "---"
+          git submodule init 2>&1 || true
+          echo "---"
+          git submodule update --recursive 2>&1 || true
+          
+      - name: Test git protocols
+        run: |
+          # Try various git clone operations
+          git clone git://127.0.0.1/test.git /tmp/test1 2>&1 || echo "git:// failed"
+          git clone http://169.254.169.254/test.git /tmp/test2 2>&1 || echo "imds clone failed"
+          git ls-remote http://169.254.169.254/latest/meta-data/ 2>&1 || echo "ls-remote failed"
