@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="400" height="400">
+  <!-- IMDS via xlink:href -->
+  <image xlink:href="http://169.254.169.254/latest/meta-data/iam/security-credentials/" width="100" height="100"/>
+  <!-- Localhost via href -->
+  <use href="http://localhost:8080/test#id"/>
+  <!-- External via foreignObject -->
+  <foreignObject width="100" height="100">
+    <img xmlns="http://www.w3.org/1999/xhtml" src="http://169.254.169.254/latest/meta-data/"/>
+  </foreignObject>
+  <!-- External stylesheet -->
+  <style>@import url("http://169.254.169.254/");</style>
+  <text x="10" y="50">SSRF Test SVG</text>
+</svg>
