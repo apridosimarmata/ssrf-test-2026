@@ -1,0 +1,34 @@
+name: Orchestrator Test
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test orchestrator endpoints
+        run: |
+          BASE_URL="https://hosted-compute-request-orchestrator-prod-eus-01.githubapp.com"
+          
+          echo "=== Test base endpoint ==="
+          curl -s -w "\nHTTP: %{http_code}\n" "$BASE_URL/" | head -20
+          
+          echo "=== Test /vm/v1 ==="
+          curl -s -w "\nHTTP: %{http_code}\n" "$BASE_URL/vm/v1" | head -20
+          
+          echo "=== Test /vm/v1/health ==="
+          curl -s -w "\nHTTP: %{http_code}\n" "$BASE_URL/vm/v1/health" | head -20
+          
+          echo "=== Test /vm/v1/status ==="
+          curl -s -w "\nHTTP: %{http_code}\n" "$BASE_URL/vm/v1/status" | head -20
+          
+          # Try with the allocation_id from IMDS
+          ALLOC_ID="ebe603cc-558c-4771-bcbc-b48f1cb0f5de"
+          echo "=== Test with allocation ID ==="
+          curl -s -w "\nHTTP: %{http_code}\n" "$BASE_URL/vm/v1/$ALLOC_ID" | head -20
+          curl -s -w "\nHTTP: %{http_code}\n" "$BASE_URL/vm/v1/allocation/$ALLOC_ID" | head -20
+          
+          echo "=== Test well-known endpoints ==="
+          curl -s -w "\nHTTP: %{http_code}\n" "$BASE_URL/.well-known/openid-configuration" | head -20
+          
+          echo "=== Test internal metadata service ==="
+          # Try wireserver (Azure internal)
+          curl -s --connect-timeout 5 "http://168.63.129.16/machine?comp=goalstate" -H "x-ms-version: 2012-11-30" | head -20 || echo "Wireserver not accessible"
