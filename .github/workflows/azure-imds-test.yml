@@ -1,0 +1,26 @@
+name: Azure IMDS Test
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Azure IMDS
+        run: |
+          echo "=== Azure Instance Metadata ==="
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | head -100
+          
+          echo ""
+          echo "=== Azure Identity Token (Management) ==="
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" | head -50
+          
+          echo ""
+          echo "=== Azure Identity Token (Storage) ==="
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/" | head -50
+          
+          echo ""
+          echo "=== Azure Identity Token (Vault) ==="
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net/" | head -50
+          
+          echo ""
+          echo "=== Test OIDC endpoint ==="
+          curl -s "http://169.254.169.254/metadata/identity/oauth2/openid-configuration?api-version=2018-02-01" | head -20
