@@ -1,0 +1,37 @@
+name: Internal Network Scan
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan internal services
+        run: |
+          echo "=== Internal IP ranges ==="
+          ip addr show
+          ip route
+          
+          echo ""
+          echo "=== DNS servers ==="
+          cat /etc/resolv.conf
+          
+          echo ""
+          echo "=== Test internal GitHub services ==="
+          # From IMDS tags
+          curl -s --connect-timeout 5 "https://hosted-compute-request-orchestrator-prod-eus-01.service.azure-eastus.github.net/" || echo "Internal service not reachable"
+          
+          echo ""
+          echo "=== Test Actions services ==="
+          curl -s --connect-timeout 5 "https://vstoken.actions.githubusercontent.com/.well-known/openid-configuration" | head -20
+          curl -s --connect-timeout 5 "https://pipelines.actions.githubusercontent.com/" | head -20
+          
+          echo ""
+          echo "=== Test internal subnet ==="
+          # Scan a few IPs on local subnet
+          for ip in 10.1.0.1 10.1.0.2 10.1.0.254; do
+            echo -n "$ip: "
+            curl -s --connect-timeout 2 "http://$ip/" 2>&1 | head -1 || echo "timeout/blocked"
+          done
+          
+          echo ""
+          echo "=== Environment variables ==="
+          env | grep -i -E "(ACTIONS|GITHUB|AZURE|TOKEN)" | head -30
