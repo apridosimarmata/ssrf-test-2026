@@ -1,0 +1,10 @@
+{
+  "name": "SSRF Test - Feature URL Injection",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {},
+    "https://ghe.io:8443/devcontainer-feature.tgz": {},
+    "https://169.254.169.254/feature.tgz": {}
+  },
+  "postCreateCommand": "echo 'Feature SSRF test completed'"
+}
