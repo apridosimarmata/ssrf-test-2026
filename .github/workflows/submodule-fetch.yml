@@ -1,0 +1,21 @@
+name: Submodule Fetch Test
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with recursive submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Show submodules
+        run: |
+          echo "=== Git Submodule Status ==="
+          git submodule status || echo "No submodules initialized"
+          
+          echo ""
+          echo "=== .gitmodules ==="
+          cat .gitmodules || echo "No .gitmodules"
