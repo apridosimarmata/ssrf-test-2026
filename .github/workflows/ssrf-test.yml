@@ -1,13 +1,19 @@
 name: SSRF Test
-on: [push]
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Test internal endpoints
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+      
+      - name: Fetch submodules
         run: |
-          echo "Testing IMDS..."
-          curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/ || echo "IMDS blocked"
-          curl -s --connect-timeout 5 http://169.254.170.2/v2/credentials || echo "ECS blocked"
-          echo "Testing internal..."
-          curl -s --connect-timeout 5 http://localhost:8080/ || echo "localhost blocked"
+          git submodule update --init --recursive || true
+          git lfs fetch --all || true
