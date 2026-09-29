@@ -1,0 +1,63 @@
+name: Gallery Probe
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Probe Image Gallery from Runner"
+        run: |
+          SUBSCRIPTION="0019feaf-6e36-4d23-acbf-b53de156cae2"
+          RG="hostedcomputeims-403500522-rg"
+          GALLERY="imsgallery.403500522"
+          IMAGE="image-2295-gen2-v2-sp"
+          
+          echo "=== 1. Try Azure Instance Metadata for gallery access ==="
+          # Check if there's a way to access gallery through IMDS
+          curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance/compute/storageProfile?api-version=2021-12-13" | jq .
+          
+          echo ""
+          echo "=== 2. Get OIDC token for Azure management ==="
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://management.azure.com" | jq -r '.value')
+          echo "Got OIDC token for management.azure.com"
+          
+          echo ""
+          echo "=== 3. Try ARM with OIDC token ==="
+          curl -s -w "\nHTTP: %{http_code}\n" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://management.azure.com/subscriptions/$SUBSCRIPTION/resourceGroups/$RG/providers/Microsoft.Compute/galleries/$GALLERY?api-version=2022-03-03" | head -30
+          
+          echo ""
+          echo "=== 4. List gallery images with OIDC ==="
+          curl -s -w "\nHTTP: %{http_code}\n" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://management.azure.com/subscriptions/$SUBSCRIPTION/resourceGroups/$RG/providers/Microsoft.Compute/galleries/$GALLERY/images?api-version=2022-03-03" | head -30
+          
+          echo ""
+          echo "=== 5. Get specific image versions ==="
+          curl -s -w "\nHTTP: %{http_code}\n" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://management.azure.com/subscriptions/$SUBSCRIPTION/resourceGroups/$RG/providers/Microsoft.Compute/galleries/$GALLERY/images/$IMAGE/versions?api-version=2022-03-03" | head -30
+          
+          echo ""
+          echo "=== 6. Try Shared Gallery direct access (no auth) ==="
+          # Shared galleries can sometimes be accessed by public name
+          curl -s -w "\nHTTP: %{http_code}\n" \
+            "https://management.azure.com/subscriptions/$SUBSCRIPTION/providers/Microsoft.Compute/locations/eastus2/sharedGalleries/$GALLERY?api-version=2022-03-03" | head -20
+          
+          echo ""
+          echo "=== 7. Check if gallery is community/public ==="
+          curl -s -w "\nHTTP: %{http_code}\n" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            "https://management.azure.com/subscriptions/$SUBSCRIPTION/providers/Microsoft.Compute/locations/eastus2/communityGalleries?api-version=2022-03-03" | head -30
+          
+          echo ""
+          echo "=== 8. Try to get gallery by public name pattern ==="
+          for REGION in eastus eastus2 westus westus2 centralus; do
+            echo "--- Region: $REGION ---"
+            curl -s -w " HTTP: %{http_code}\n" \
+              "https://management.azure.com/subscriptions/$SUBSCRIPTION/providers/Microsoft.Compute/locations/$REGION/sharedGalleries?api-version=2022-03-03" 2>&1 | head -5
+          done
