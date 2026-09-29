@@ -1,0 +1,135 @@
+name: Azure WireServer Probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe-wireserver:
+    runs-on: ubuntu-latest
+    steps:
+      - name: System Info
+        run: |
+          echo "=== RUNNER INFO ==="
+          uname -a
+          cat /etc/os-release
+          hostname
+          echo "=== NETWORK INFO ==="
+          ip addr
+          ip route
+          cat /etc/resolv.conf
+          
+      - name: WireServer Goal State
+        run: |
+          echo "=== WIRESERVER GOALSTATE ==="
+          curl -v --connect-timeout 10 -H "x-ms-version: 2015-04-05" -H "x-ms-agent-name: WALinuxAgent" \
+            "http://168.63.129.16/machine?comp=goalstate" 2>&1 || echo "FAILED: $?"
+            
+      - name: WireServer Hosting Environment Config
+        run: |
+          echo "=== HOSTING ENV CONFIG ==="
+          curl -v --connect-timeout 10 -H "x-ms-version: 2015-04-05" -H "x-ms-agent-name: WALinuxAgent" \
+            "http://168.63.129.16/machine/plugins?comp=config&type=hostingEnvironmentConfig" 2>&1 || echo "FAILED: $?"
+            
+      - name: WireServer Shared Config
+        run: |
+          echo "=== SHARED CONFIG ==="
+          curl -v --connect-timeout 10 -H "x-ms-version: 2015-04-05" -H "x-ms-agent-name: WALinuxAgent" \
+            "http://168.63.129.16/machine/plugins?comp=config&type=sharedConfig" 2>&1 || echo "FAILED: $?"
+            
+      - name: WireServer Extensions Config
+        run: |
+          echo "=== EXTENSIONS CONFIG ==="
+          curl -v --connect-timeout 10 -H "x-ms-version: 2015-04-05" -H "x-ms-agent-name: WALinuxAgent" \
+            "http://168.63.129.16/machine/plugins?comp=config&type=extensions" 2>&1 || echo "FAILED: $?"
+            
+      - name: WireServer Metadata Instance
+        run: |
+          echo "=== METADATA INSTANCE ==="
+          curl -v --connect-timeout 10 -H "x-ms-version: 2015-04-05" \
+            "http://168.63.129.16/metadata/instance?api-version=2020-06-01" 2>&1 || echo "FAILED: $?"
+            
+      - name: WireServer Root Port 80
+        run: |
+          echo "=== PORT 80 ROOT ==="
+          curl -v --connect-timeout 10 -H "x-ms-version: 2015-04-05" \
+            "http://168.63.129.16:80/" 2>&1 || echo "FAILED: $?"
+            
+      - name: WireServer Port 32526 (Health)
+        run: |
+          echo "=== PORT 32526 (HEALTH) ==="
+          curl -v --connect-timeout 10 "http://168.63.129.16:32526/" 2>&1 || echo "FAILED: $?"
+          curl -v --connect-timeout 10 "http://168.63.129.16:32526/health" 2>&1 || echo "FAILED: $?"
+          
+      - name: WireServer No Headers
+        run: |
+          echo "=== NO SPECIAL HEADERS ==="
+          curl -v --connect-timeout 10 "http://168.63.129.16/machine?comp=goalstate" 2>&1 || echo "FAILED: $?"
+          
+      - name: WireServer Certificates Endpoint
+        run: |
+          echo "=== CERTIFICATES ==="
+          curl -v --connect-timeout 10 -H "x-ms-version: 2015-04-05" \
+            "http://168.63.129.16/machine/plugins?comp=certificates" 2>&1 || echo "FAILED: $?"
+            
+      - name: WireServer Health API
+        run: |
+          echo "=== HEALTH API ==="
+          curl -v --connect-timeout 10 -H "x-ms-version: 2015-04-05" \
+            "http://168.63.129.16/machine?comp=health" 2>&1 || echo "FAILED: $?"
+            
+      - name: Azure IMDS for Comparison
+        run: |
+          echo "=== IMDS (169.254.169.254) ==="
+          curl -v --connect-timeout 10 -H "Metadata: true" \
+            "http://169.254.169.254/metadata/instance?api-version=2021-02-01" 2>&1 || echo "FAILED: $?"
+            
+      - name: Port Scan WireServer
+        run: |
+          echo "=== PORT SCAN 168.63.129.16 ==="
+          for port in 80 443 8080 32526 4000 6060 8888; do
+            echo "--- Port $port ---"
+            timeout 5 bash -c "echo > /dev/tcp/168.63.129.16/$port" 2>&1 && echo "OPEN" || echo "CLOSED/FILTERED"
+          done
+          
+      - name: DNS Lookups
+        run: |
+          echo "=== DNS LOOKUPS ==="
+          nslookup wpad.reddog.microsoft.com 2>&1 || true
+          nslookup management.azure.com 2>&1 || true
+          nslookup 168.63.129.16 2>&1 || true
+          dig +short wpad.reddog.microsoft.com 2>&1 || true
+          
+      - name: Check Azure Agent
+        run: |
+          echo "=== AZURE AGENT CHECK ==="
+          ls -la /var/lib/waagent/ 2>&1 || echo "No waagent dir"
+          ls -la /var/log/azure/ 2>&1 || echo "No azure log dir"
+          cat /var/lib/waagent/GoalState.*.xml 2>&1 || echo "No goal state files"
+          cat /var/lib/waagent/SharedConfig.xml 2>&1 || echo "No shared config"
+          cat /var/lib/waagent/HostingEnvironmentConfig.xml 2>&1 || echo "No hosting env config"
+          
+      - name: Environment Variables
+        run: |
+          echo "=== AZURE ENV VARS ==="
+          env | grep -i azure || echo "No Azure env vars"
+          env | grep -i ACTIONS || true
+          
+      - name: Try Different HTTP Methods
+        run: |
+          echo "=== HTTP METHODS ==="
+          for method in GET POST PUT OPTIONS HEAD; do
+            echo "--- $method ---"
+            curl -v -X $method --connect-timeout 10 -H "x-ms-version: 2015-04-05" \
+              "http://168.63.129.16/machine?comp=goalstate" 2>&1 | head -50 || true
+          done
+          
+      - name: WireServer via IPv6
+        run: |
+          echo "=== IPV6 ATTEMPTS ==="
+          curl -v --connect-timeout 10 "http://[::ffff:168.63.129.16]/machine?comp=goalstate" 2>&1 || echo "IPv6 mapped failed"
+          
+      - name: Trace Route
+        run: |
+          echo "=== TRACEROUTE ==="
+          traceroute -n 168.63.129.16 2>&1 || true
+          traceroute -n 169.254.169.254 2>&1 || true
