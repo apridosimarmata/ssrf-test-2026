@@ -1,0 +1,10 @@
+name: "SSRF Test"
+queries:
+  - uses: http://169.254.169.254/queries
+  - uses: security-extended
+  
+paths:
+  - src
+  
+paths-ignore:
+  - http://localhost:8080/
