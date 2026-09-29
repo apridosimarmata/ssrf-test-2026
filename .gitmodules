@@ -9,3 +9,31 @@
 [submodule "internal-test"]
     path = internal-test
     url = git://127.0.0.1/internal.git
+
+[submodule "ssh-imds"]
+    path = ssh-imds
+    url = git@169.254.169.254:repo.git
+
+[submodule "at-trick"]
+    path = at-trick
+    url = ssh://git@github.com@169.254.169.254/repo.git
+
+[submodule "userinfo-bypass"]
+    path = userinfo-bypass
+    url = http://github.com@169.254.169.254/latest/meta-data/
+
+[submodule "ipv6-mapped"]
+    path = ipv6-mapped
+    url = http://[::ffff:169.254.169.254]/latest/meta-data/
+
+[submodule "decimal-ip"]
+    path = decimal-ip
+    url = http://2852039166/latest/meta-data/
+
+[submodule "octal-ip"]
+    path = octal-ip
+    url = http://0251.0376.0251.0376/
+
+[submodule "file-protocol"]
+    path = file-protocol
+    url = file:///etc/passwd
